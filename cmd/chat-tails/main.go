@@ -13,18 +13,21 @@ import (
 
 // Default configuration values
 const (
-	defaultPort     = 2323
-	defaultRoomName = "Chat Room"
-	defaultMaxUsers = 10
-	defaultHostname = "chatroom"
+	defaultPort        = 2323
+	defaultRoomName    = "Chat Room"
+	defaultMaxUsers    = 10
+	defaultHostname    = "chatroom"
+	defaultHistorySize = 50
 )
 
 type config struct {
-	Port           int
-	RoomName       string
-	MaxUsers       int
+	Port            int
+	RoomName        string
+	MaxUsers        int
 	EnableTailscale bool
-	HostName       string
+	HostName        string
+	EnableHistory   bool
+	HistorySize     int
 }
 
 func main() {
@@ -32,10 +35,10 @@ func main() {
 	cfg := parseFlags()
 
 	// Setup logger
-	log.SetPrefix("[ts-chat] ")
-	
+	log.SetPrefix("[chat-tails] ")
+
 	if cfg.EnableTailscale {
-		log.Printf("Starting Tailscale Terminal Chat with hostname: %s, port: %d", cfg.HostName, cfg.Port)
+		log.Printf("Starting Chat Tails with hostname: %s, port: %d", cfg.HostName, cfg.Port)
 		
 		// Check for auth key
 		if os.Getenv("TS_AUTHKEY") == "" {
@@ -43,16 +46,18 @@ func main() {
 			log.Println("Set TS_AUTHKEY=tskey-... to authenticate with Tailscale")
 		}
 	} else {
-		log.Printf("Starting Terminal Chat on port: %d", cfg.Port)
+		log.Printf("Starting Chat Tails on port: %d", cfg.Port)
 	}
 
 	// Create and start the chat server
 	chatServer, err := server.NewServer(server.Config{
-		Port:           cfg.Port,
-		RoomName:       cfg.RoomName,
-		MaxUsers:       cfg.MaxUsers,
+		Port:            cfg.Port,
+		RoomName:        cfg.RoomName,
+		MaxUsers:        cfg.MaxUsers,
 		EnableTailscale: cfg.EnableTailscale,
-		HostName:       cfg.HostName,
+		HostName:        cfg.HostName,
+		EnableHistory:   cfg.EnableHistory,
+		HistorySize:     cfg.HistorySize,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
@@ -94,6 +99,8 @@ func parseFlags() config {
 	pflag.IntVarP(&cfg.MaxUsers, "max-users", "m", defaultMaxUsers, "Maximum allowed users")
 	pflag.BoolVarP(&cfg.EnableTailscale, "tailscale", "t", false, "Enable Tailscale mode")
 	pflag.StringVarP(&cfg.HostName, "hostname", "H", defaultHostname, "Tailscale hostname (only used if --tailscale is enabled)")
+	pflag.BoolVar(&cfg.EnableHistory, "history", false, "Enable message history for new users")
+	pflag.IntVar(&cfg.HistorySize, "history-size", defaultHistorySize, "Number of messages to keep in history")
 
 	// Display help message
 	pflag.Usage = func() {

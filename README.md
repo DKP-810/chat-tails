@@ -1,133 +1,133 @@
-# Terminal Chat with Tailscale
+# Chat Tails
 
-A terminal-based chat application built in Go. The chat server allows multiple users to connect via telnet or netcat and chat in real-time. It supports both regular TCP mode and Tailscale mode for secure networking.
+A terminal-based chat application built in Go. Share a chat room with friends over your Tailscale network - they connect via netcat or telnet, no client installation needed.
 
 ## Features
 
-- Terminal-based interface with styled text using ANSI colors
-- Basic chat commands: `/who`, `/me`, `/help`, `/quit`
-- Configurable port, room name, and maximum number of users
-- Optional Tailscale integration for secure networking across devices
-- Support for simultaneous connections
+- **Tailscale Integration** - Share your chat server securely with anyone on your Tailnet
+- **Zero Client Setup** - Users connect with just `nc` or `telnet`
+- **Colorful UI** - Each user gets a unique color, styled messages with ANSI colors
+- **Message History** - New users can see recent chat history (optional)
+- **Chat Commands** - `/who`, `/me`, `/help`, `/quit`
+- **Rate Limiting** - Built-in protection against spam
 
-## Requirements
+## Quick Start
 
-- Go 1.19+
-- Tailscale account (only required for Tailscale mode)
+```bash
+# Build
+make build
+
+# Run locally
+./chat-server
+
+# Run with Tailscale (share with your network)
+export TS_AUTHKEY=tskey-auth-xxxxx
+./chat-server --tailscale --hostname mychat --history
+```
+
+Connect from any machine:
+```bash
+nc mychat.your-tailnet.ts.net 2323
+```
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/bscott/ts-chat.git
-cd ts-chat
-
-# Build the binary
-go build -o chat-server ./cmd/ts-chat
-
-# Or use the provided Makefile
-make
-```
-
-## Usage
-
-### Regular Mode:
-
-Run the server in regular TCP mode (accessible only on the local network):
+### From Source
 
 ```bash
-# Run with default settings
-./chat-server
-
-# Run with custom settings
-./chat-server --port 2323 --room-name "My Chat Room" --max-users 20
+git clone https://github.com/bscott/chat-tails.git
+cd chat-tails
+make build
 ```
 
-### Tailscale Mode:
-
-Run the server in Tailscale mode (accessible over your Tailnet):
+### Docker
 
 ```bash
-# Set your Tailscale auth key
-export TS_AUTHKEY=tskey-your-auth-key-here
+# Build
+docker build -t chat-tails .
 
-# Run with Tailscale mode enabled
-./chat-server --tailscale --hostname mychat --room-name "Tailscale Chat" --port 2323
+# Run locally
+docker run -p 2323:2323 chat-tails
+
+# Run with Tailscale
+docker run -e TS_AUTHKEY=tskey-auth-xxxxx chat-tails --tailscale --hostname mychat
 ```
 
-When using Tailscale mode, the chat server will:
-1. Authenticate with Tailscale using your TS_AUTHKEY
-2. Register a node in your Tailnet with the specified hostname
-3. Be accessible from any device on your Tailnet
+## Configuration
 
-### Configuration options:
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--port` | `-p` | 2323 | TCP port to listen on |
+| `--room-name` | `-r` | "Chat Room" | Name displayed in the chat |
+| `--max-users` | `-m` | 10 | Maximum concurrent users |
+| `--tailscale` | `-t` | false | Enable Tailscale mode |
+| `--hostname` | `-H` | "chatroom" | Tailscale hostname (requires `--tailscale`) |
+| `--history` | | false | Enable message history for new users |
+| `--history-size` | | 50 | Number of messages to keep in history |
 
-- `--port`: TCP port to listen on (default: 2323)
-- `--room-name`: Chat room name (default: "Chat Room")
-- `--max-users`: Maximum allowed users (default: 10)
-- `--tailscale`: Enable Tailscale mode (default: false)
-- `--hostname`: Tailscale hostname (default: "chatroom", only used if --tailscale is enabled)
+## Tailscale Setup
 
-### Tailscale Authentication:
-
-To use Tailscale mode, you need to provide an auth key:
-
-1. Obtain a Tailscale auth key from the [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
-2. Set the auth key as an environment variable:
+1. Get an auth key from [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys)
+2. Set the environment variable:
    ```bash
-   export TS_AUTHKEY=tskey-your-auth-key-here
+   export TS_AUTHKEY=tskey-auth-xxxxx
+   ```
+3. Run with Tailscale enabled:
+   ```bash
+   ./chat-server --tailscale --hostname mychat
+   ```
+4. Share with others on your Tailnet - they connect with:
+   ```bash
+   nc mychat.your-tailnet.ts.net 2323
    ```
 
-### Docker usage:
+### Troubleshooting
 
+If you see "Authkey is set; but state is NoState":
 ```bash
-# Build the Docker image
-docker build -t chat-server .
+# Option 1: Force new login
+export TSNET_FORCE_LOGIN=1
 
-# Run in regular mode
-docker run -p 2323:2323 chat-server
-
-# Run in Tailscale mode
-docker run -e TS_AUTHKEY=tskey-your-auth-key-here chat-server --tailscale --hostname dockerchat
-```
-
-### Connecting to the chat:
-
-#### Regular mode:
-```bash
-# Connect via Netcat
-nc localhost 2323
-
-# Or Telnet
-telnet localhost 2323
-```
-
-#### Tailscale mode:
-```bash
-# Connect via Netcat (replace 'hostname' with your specified hostname)
-nc hostname.ts.net 2323
-
-# Or Telnet
-telnet hostname.ts.net 2323
+# Option 2: Clear existing state
+rm -rf ~/Library/Application\ Support/tsnet-chat-server/  # macOS
+rm -rf ~/.local/share/tsnet-chat-server/                  # Linux
 ```
 
 ## Chat Commands
 
-When connected to the chat, the following commands are available:
-
-- `/who` - Shows a list of all users in the room
-- `/me <action>` - Perform an action (e.g., `/me waves hello` displays `* Username waves hello`)
-- `/help` - Shows the available commands
-- `/quit` - Disconnects from the chat
+| Command | Description |
+|---------|-------------|
+| `/who` | List all users in the room |
+| `/me <action>` | Send an action (e.g., `/me waves` → `* Brian waves`) |
+| `/help` | Show available commands |
+| `/quit` | Disconnect from chat |
 
 ## Development
 
-The project is organized as follows:
+```bash
+# Build
+make build
 
-- `cmd/ts-chat/main.go`: Main application entry point
-- `internal/server/`: Server implementation
-- `internal/chat/`: Chat room and client handling
-- `internal/ui/`: Terminal UI styling
+# Run tests
+make test
+
+# Run a single test
+go test -v -run TestName ./internal/chat/
+
+# Cross-compile for all platforms
+make build-all
+```
+
+### Project Structure
+
+```
+├── cmd/chat-tails/    # Application entry point
+├── internal/
+│   ├── chat/          # Room and client handling
+│   ├── server/        # Server lifecycle, Tailscale integration
+│   └── ui/            # Terminal styling (lipgloss)
+└── Makefile
+```
 
 ## License
 

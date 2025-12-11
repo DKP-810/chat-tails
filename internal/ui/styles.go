@@ -15,6 +15,30 @@ var (
 	warning   = lipgloss.AdaptiveColor{Light: "#F25D94", Dark: "#F25D94"}
 )
 
+// UserColors is a list of colors for different users
+var UserColors = []string{
+	"#1D9BF0", // Blue
+	"#F25D94", // Pink
+	"#43BF6D", // Green
+	"#FF6B35", // Orange
+	"#9B5DE5", // Purple
+	"#00F5D4", // Cyan
+	"#FEE440", // Yellow
+	"#FF595E", // Red
+}
+
+// GetUserColor returns a consistent color for a username based on hash
+func GetUserColor(username string) string {
+	hash := 0
+	for _, c := range username {
+		hash = int(c) + ((hash << 5) - hash)
+	}
+	if hash < 0 {
+		hash = -hash
+	}
+	return UserColors[hash%len(UserColors)]
+}
+
 // Style definitions
 var (
 	// Base styles
@@ -64,7 +88,9 @@ func FormatSystemMessage(message string) string {
 
 // FormatUserMessage formats a user message
 func FormatUserMessage(username, message, timestamp string) string {
-	return UserStyle.Render("["+timestamp+"] "+username+": ") + message
+	userColor := GetUserColor(username)
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(userColor)).Bold(true)
+	return style.Render("["+timestamp+"] "+username+": ") + message
 }
 
 // FormatSelfMessage formats the user's own message
@@ -74,7 +100,9 @@ func FormatSelfMessage(message, timestamp string) string {
 
 // FormatActionMessage formats an action message
 func FormatActionMessage(username, action string) string {
-	return ActionStyle.Render("* " + username + " " + action)
+	userColor := GetUserColor(username)
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(userColor)).Italic(true)
+	return style.Render("* " + username + " " + action)
 }
 
 // FormatTitle formats a title
@@ -105,11 +133,13 @@ func FormatHelp() string {
 // FormatUserList formats the user list
 func FormatUserList(roomName string, users []string, maxUsers int) string {
 	content := HeaderStyle.Render("Users in "+roomName+" ("+lipgloss.NewStyle().Foreground(accent).Render(fmt.Sprintf("%d/%d", len(users), maxUsers))+"):") + "\n"
-	
+
 	for _, user := range users {
-		content += "- " + UserStyle.Render(user) + "\n"
+		userColor := GetUserColor(user)
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(userColor)).Bold(true)
+		content += "- " + style.Render(user) + "\n"
 	}
-	
+
 	return BoxStyle.Render(content)
 }
 

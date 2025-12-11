@@ -5,7 +5,7 @@ BINARY_NAME=chat-server
 
 # Build the application
 build:
-	go build -o $(BINARY_NAME) ./cmd/ts-chat
+	go build -o $(BINARY_NAME) ./cmd/chat-tails
 
 # Run the application
 run: build
@@ -32,16 +32,16 @@ build-all: build-linux build-macos build-windows build-arm
 
 # Linux amd64
 build-linux:
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 ./cmd/ts-chat
+	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux-amd64 ./cmd/chat-tails
 
 # macOS amd64
 build-macos:
-	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin-amd64 ./cmd/ts-chat
+	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin-amd64 ./cmd/chat-tails
 
 # Windows amd64
 build-windows:
-	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME)-windows-amd64.exe ./cmd/ts-chat
+	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME)-windows-amd64.exe ./cmd/chat-tails
 
 # ARM (Raspberry Pi)
 build-arm:
-	GOOS=linux GOARCH=arm go build -o $(BINARY_NAME)-linux-arm ./cmd/ts-chat
+	GOOS=linux GOARCH=arm go build -o $(BINARY_NAME)-linux-arm ./cmd/chat-tails

@@ -16,10 +16,48 @@ import (
 
 // Constants for rate limiting and validation
 const (
-	MaxMessageLength = 1000     // Maximum message length in characters
-	MessageRateLimit = 5        // Maximum messages per second
-	RateLimitWindow  = 5 * time.Second // Time window for rate limiting
+	MaxMessageLength = 1000                // Maximum message length in characters
+	MessageRateLimit = 5                   // Maximum messages per second
+	RateLimitWindow  = 5 * time.Second     // Time window for rate limiting
+	MaxNicknameLen   = 20                  // Maximum nickname length
+	MinNicknameLen   = 2                   // Minimum nickname length
 )
+
+// ANSI escape codes for terminal control
+const (
+	cursorUp        = "\033[1A"  // Move cursor up one line
+	clearLine       = "\033[2K"  // Clear entire line
+	cursorToStart   = "\033[0G"  // Move cursor to start of line
+	inputPrompt     = "> "       // Input prompt indicator
+)
+
+// validateNickname checks if a nickname is valid
+func validateNickname(nickname string) error {
+	if nickname == "" {
+		return fmt.Errorf("Nickname cannot be empty. Please try again.")
+	}
+
+	if len(nickname) < MinNicknameLen {
+		return fmt.Errorf("Nickname must be at least %d characters.", MinNicknameLen)
+	}
+
+	if len(nickname) > MaxNicknameLen {
+		return fmt.Errorf("Nickname must be at most %d characters.", MaxNicknameLen)
+	}
+
+	if strings.ToLower(nickname) == "system" {
+		return fmt.Errorf("Nickname 'System' is reserved. Please choose another nickname.")
+	}
+
+	// Check for valid characters (alphanumeric, underscore, hyphen)
+	for _, r := range nickname {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return fmt.Errorf("Nickname can only contain letters, numbers, underscores, and hyphens.")
+		}
+	}
+
+	return nil
+}
 
 // Client represents a chat client
 type Client struct {
@@ -64,26 +102,29 @@ func NewClient(conn net.Conn, room *Room) (*Client, error) {
 	
 	// Send welcome message
 	if err := client.sendWelcomeMessage(); err != nil {
-		// Leave the room since we encountered an error
+		// Leave the room since we encountered an error (this also removes the client/reservation)
 		room.Leave(client)
 		// Close the connection
 		conn.Close()
 		return nil, fmt.Errorf("welcome message failed: %w", err)
 	}
-	
+
+	// Send message history to the new client
+	client.sendHistory()
+
 	return client, nil
 }
 
 // requestNickname asks the user for a nickname
 func (c *Client) requestNickname() error {
 	// Send welcome message
-	if err := c.write(ui.FormatTitle("Welcome to Tailscale Terminal Chat") + "\r\n\r\n"); err != nil {
+	if err := c.write(ui.FormatTitle("Welcome to Chat Tails") + "\r\n\r\n"); err != nil {
 		return fmt.Errorf("failed to write welcome message: %w", err)
 	}
 	
 	// Ask for nickname
 	for {
-		if err := c.write(ui.InputStyle.Render("Please enter your nickname: ")); err != nil {
+		if err := c.write("Please enter your nickname: "); err != nil {
 			return fmt.Errorf("failed to write nickname prompt: %w", err)
 		}
 		
@@ -97,29 +138,23 @@ func (c *Client) requestNickname() error {
 		nickname = strings.TrimSpace(nickname)
 		
 		// Validate nickname
-		if nickname == "" {
-			if err := c.write("Nickname cannot be empty. Please try again.\r\n"); err != nil {
-				return fmt.Errorf("failed to write error message: %w", err)
+		if err := validateNickname(nickname); err != nil {
+			if writeErr := c.write(err.Error() + "\r\n"); writeErr != nil {
+				return fmt.Errorf("failed to write error message: %w", writeErr)
 			}
 			continue
 		}
 		
-		if strings.ToLower(nickname) == "system" {
-			if err := c.write("Nickname 'System' is reserved. Please choose another nickname.\r\n"); err != nil {
-				return fmt.Errorf("failed to write error message: %w", err)
-			}
-			continue
-		}
-		
-		if !c.room.IsNicknameAvailable(nickname) {
+		// Atomically reserve the nickname to prevent race conditions
+		if !c.room.ReserveNickname(nickname) {
 			errMsg := fmt.Sprintf("Nickname '%s' is already taken. Please choose another nickname.\r\n", nickname)
 			if err := c.write(errMsg); err != nil {
 				return fmt.Errorf("failed to write error message: %w", err)
 			}
 			continue
 		}
-		
-		// Set nickname
+
+		// Set nickname - reservation successful
 		c.Nickname = nickname
 		break
 	}
@@ -130,15 +165,16 @@ func (c *Client) requestNickname() error {
 // sendWelcomeMessage sends a welcome message to the client
 func (c *Client) sendWelcomeMessage() error {
 	banner := `
-╔═══════════════════════════════════════════════════════════════════════╗
-║           _____                    _             _   _____             ║
-║          |_   _|__ _ __ _ __ ___ (_)_ __   __ _| | |  __ \            ║
-║            | |/ _ \ '__| '_ ' _ \| | '_ \ / _' | | | |  | |           ║
-║            | |  __/ |  | | | | | | | | | | (_| | | | |__| |           ║
-║            |_|\___|_|  |_| |_| |_|_|_| |_|\__,_|_| |_____/            ║
-║                                                                       ║
-║                             CHAT ROOM                                 ║
-╚═══════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║      _____ _           _     _____     _ _                 ║
+║     / ____| |         | |   |_   _|   (_) |                ║
+║    | |    | |__   __ _| |_    | | __ _ _| |___             ║
+║    | |    | '_ \ / _' | __|   | |/ _' | | / __|            ║
+║    | |____| | | | (_| | |_    | | (_| | | \__ \            ║
+║     \_____|_| |_|\__,_|\__|   |_|\__,_|_|_|___/            ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
 `
 	coloredBanner := ui.SystemStyle.Render(banner)
 	welcomeMsg := ui.FormatWelcomeMessage(c.room.Name, c.Nickname)
@@ -150,12 +186,24 @@ func (c *Client) sendWelcomeMessage() error {
 	if err := c.write(welcomeMsg + "\r\n\r\n"); err != nil {
 		return fmt.Errorf("failed to write welcome message: %w", err)
 	}
-	
-	if err := c.write("Type a message and press Enter to send. Type /help for commands.\r\n\r\n"); err != nil {
-		return fmt.Errorf("failed to write help message: %w", err)
-	}
-	
+
 	return nil
+}
+
+// sendHistory sends the message history to the client
+func (c *Client) sendHistory() {
+	history := c.room.GetHistory()
+	if len(history) == 0 {
+		return
+	}
+
+	c.write(ui.FormatSystemMessage("--- Recent messages ---") + "\r\n")
+
+	for _, msg := range history {
+		c.sendMessage(msg)
+	}
+
+	c.write(ui.FormatSystemMessage("--- End of history ---") + "\r\n\r\n")
 }
 
 // Handle handles client interactions
@@ -163,89 +211,112 @@ func (c *Client) Handle(ctx context.Context) {
 	// Cleanup when done
 	defer func() {
 		c.room.Leave(c)
+		c.close()
 	}()
-	
-	// Create a timeout reader
-	readCh := make(chan readResult)
-	readErrorCh := make(chan error)
-	
+
+	// Start a goroutine to close connection when context is cancelled
+	go func() {
+		<-ctx.Done()
+		c.close()
+	}()
+
+	// Show initial prompt
+	c.showPrompt()
+
 	// Handle client messages
 	for {
-		select {
-		case <-ctx.Done():
+		// Set read deadline to allow periodic context checking
+		if conn, ok := c.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		}
+
+		line, err := c.reader.ReadString('\n')
+		if err != nil {
+			// Check if context was cancelled
+			if ctx.Err() != nil {
+				return
+			}
+
+			// Check for timeout - just continue to check context
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue
+			}
+
+			if err == io.EOF {
+				// Client disconnected normally
+				return
+			}
+
+			log.Printf("Error reading from client %s: %v", c.Nickname, err)
 			return
-			
-		default:
-			// Use a goroutine for reading to handle timeouts and cancelations
-			go func() {
-				line, err := c.reader.ReadString('\n')
-				if err != nil {
-					readErrorCh <- err
-					return
-				}
-				readCh <- readResult{message: line}
-			}()
-			
-			// Wait for either a message, error, or context cancellation
-			select {
-			case <-ctx.Done():
-				return
-				
-			case err := <-readErrorCh:
-				if err == io.EOF {
-					// Client disconnected normally
-					return
-				}
-				
-				// Try to notify the client of the error
-				log.Printf("Error reading from client %s: %v", c.Nickname, err)
-				c.sendSystemMessage(fmt.Sprintf("Error reading message: %v", err))
-				return
-				
-			case result := <-readCh:
-				// Process the message
-				message := strings.TrimSpace(result.message)
-				
-				// Skip empty messages
-				if message == "" {
-					continue
-				}
-				
-				// Validate message length
-				if err := c.validateMessageLength(message); err != nil {
-					c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
-					continue
-				}
-				
-				// Check rate limiting (except for /quit command)
-				if !strings.HasPrefix(message, "/quit") {
-					if err := c.checkRateLimit(); err != nil {
-						c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
-						continue
-					}
-				}
-				
-				// Handle command or regular message
-				if strings.HasPrefix(message, "/") {
-					if err := c.handleCommand(message); err != nil {
-						c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
-					}
-				} else {
-					// Send message to room
-					c.room.Broadcast(Message{
-						From:      c.Nickname,
-						Content:   message,
-						Timestamp: time.Now(),
-					})
-				}
+		}
+
+		// Process the message
+		message := strings.TrimSpace(line)
+
+		// Clear the input line (move up and clear the echoed input)
+		c.clearInputLine()
+
+		// Skip empty messages
+		if message == "" {
+			c.showPrompt()
+			continue
+		}
+
+		// Validate message length
+		if err := c.validateMessageLength(message); err != nil {
+			c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
+			c.showPrompt()
+			continue
+		}
+
+		// Check rate limiting (except for /quit command)
+		if !strings.HasPrefix(message, "/quit") {
+			if err := c.checkRateLimit(); err != nil {
+				c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
+				c.showPrompt()
+				continue
 			}
 		}
+
+		// Handle command or regular message
+		if strings.HasPrefix(message, "/") {
+			if err := c.handleCommand(message); err != nil {
+				// Error already sent to client in handleCommand
+			}
+		} else {
+			// Send message to room
+			c.room.Broadcast(Message{
+				From:      c.Nickname,
+				Content:   message,
+				Timestamp: time.Now(),
+			})
+		}
+
+		// Show prompt for next input
+		c.showPrompt()
 	}
 }
 
-// readResult holds the result of a read operation
-type readResult struct {
-	message string
+// clearInputLine clears the echoed input line
+func (c *Client) clearInputLine() {
+	c.write(cursorUp + clearLine + cursorToStart)
+}
+
+// showPrompt displays the input prompt
+func (c *Client) showPrompt() {
+	c.write(inputPrompt)
+}
+
+// close closes the client connection safely
+func (c *Client) close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
 }
 
 // validateMessageLength checks if a message is within the allowed length
@@ -314,10 +385,8 @@ func (c *Client) handleCommand(cmd string) error {
 		
 	case "/quit":
 		c.sendSystemMessage("Goodbye!")
-		// We don't return an error here since this is expected behavior
-		if err := c.conn.Close(); err != nil {
-			return fmt.Errorf("error closing connection: %w", err)
-		}
+		c.close()
+		return nil
 		
 	default:
 		c.sendSystemMessage(fmt.Sprintf("Unknown command: %s", command))
@@ -356,58 +425,32 @@ func (c *Client) sendSystemMessage(message string) {
 func (c *Client) sendMessage(msg Message) {
 	var formatted string
 	timeStr := msg.Timestamp.Format("15:04:05")
-	
-	
+
 	if msg.IsSystem {
 		formatted = ui.FormatSystemMessage(msg.Content) + "\r\n"
 	} else if msg.IsAction {
 		formatted = ui.FormatActionMessage(msg.From, msg.Content) + "\r\n"
-	} else if msg.From == c.Nickname {
-		formatted = ui.FormatSelfMessage(msg.Content, timeStr) + "\r\n"
 	} else {
 		formatted = ui.FormatUserMessage(msg.From, msg.Content, timeStr) + "\r\n"
 	}
-	
-	// Use a safer approach to write to client
-	// Create a channel to receive any errors from the goroutine
-	errCh := make(chan error, 1)
-	
-	// Ensure the write happens without blocking
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Panic in sendMessage for client %s: %v", c.Nickname, r)
-				errCh <- fmt.Errorf("panic in sendMessage: %v", r)
-			}
-			close(errCh)
-		}()
-		
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		
-		// Check if connection is still valid
-		if c.conn == nil {
-			errCh <- fmt.Errorf("connection closed")
-			return
-		}
-		
-		if _, err := c.writer.WriteString(formatted); err != nil {
-			errCh <- fmt.Errorf("error writing message: %w", err)
-			return
-		}
-		
-		if err := c.writer.Flush(); err != nil {
-			errCh <- fmt.Errorf("error flushing message: %w", err)
-			return
-		}
-	}()
-	
-	// Log any errors (non-blocking)
-	go func() {
-		for err := range errCh {
-			log.Printf("Error sending message to %s: %v", c.Nickname, err)
-		}
-	}()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Check if connection is still valid
+	if c.conn == nil {
+		return
+	}
+
+	if _, err := c.writer.WriteString(formatted); err != nil {
+		log.Printf("Error writing message to %s: %v", c.Nickname, err)
+		return
+	}
+
+	if err := c.writer.Flush(); err != nil {
+		log.Printf("Error flushing message to %s: %v", c.Nickname, err)
+		return
+	}
 }
 
 // write writes a message to the client

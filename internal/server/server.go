@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/bscott/ts-chat/internal/chat"
 	"tailscale.com/tsnet"
@@ -28,10 +29,10 @@ type Server struct {
 // NewServer creates a new chat server
 func NewServer(cfg Config) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Create a new chat room
-	room := chat.NewRoom(cfg.RoomName, cfg.MaxUsers)
-	
+	room := chat.NewRoom(cfg.RoomName, cfg.MaxUsers, cfg.EnableHistory, cfg.HistorySize)
+
 	return &Server{
 		config:      cfg,
 		ctx:         ctx,
@@ -52,14 +53,15 @@ func (s *Server) Start() error {
 			Hostname: s.config.HostName,
 			AuthKey:  os.Getenv("TS_AUTHKEY"),
 		}
-		
-		// Listen on the specified port
-		listener, err = s.tsServer.Listen("tcp", fmt.Sprintf(":%d", s.config.Port))
-		if err != nil {
-			return fmt.Errorf("failed to start Tailscale server on port %d: %w", s.config.Port, err)
+
+		// Bring up the Tailscale node before listening
+		// This ensures proper authentication with the authkey
+		log.Printf("Connecting to Tailscale network...")
+		if _, err := s.tsServer.Up(s.ctx); err != nil {
+			return fmt.Errorf("failed to start Tailscale node: %w", err)
 		}
-		
-		// Try to get Tailscale status
+
+		// Get Tailscale status to show DNS name
 		ln, err := s.tsServer.LocalClient()
 		if err != nil {
 			log.Printf("Warning: unable to get Tailscale local client: %v", err)
@@ -72,6 +74,12 @@ func (s *Server) Start() error {
 			} else {
 				log.Printf("Tailscale node running but DNS name not available yet")
 			}
+		}
+
+		// Listen on the specified port
+		listener, err = s.tsServer.Listen("tcp", fmt.Sprintf(":%d", s.config.Port))
+		if err != nil {
+			return fmt.Errorf("failed to start Tailscale server on port %d: %w", s.config.Port, err)
 		}
 	} else {
 		// Start a regular TCP server
@@ -155,41 +163,51 @@ func (s *Server) handleConnection(conn net.Conn) {
 // Stop stops the chat server
 func (s *Server) Stop() error {
 	log.Print("Stopping chat server...")
-	
-	// Cancel the context to signal shutdown
+
+	// Cancel the context to signal shutdown to all handlers
 	s.cancel()
-	
-	// Stop the chat room
-	if s.chatRoom != nil {
-		if err := s.chatRoom.Stop(); err != nil {
-			log.Printf("Error stopping chat room: %v", err)
-		}
-	}
-	
-	// Close all active connections
-	s.mu.Lock()
-	for _, conn := range s.connections {
-		conn.Close()
-	}
-	s.mu.Unlock()
-	
-	// Close the listener
+
+	// Close the listener first to stop accepting new connections
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
 			log.Printf("Error closing listener: %v", err)
 		}
 	}
-	
+
+	// Close all active connections to unblock client handlers
+	s.mu.Lock()
+	for _, conn := range s.connections {
+		conn.Close()
+	}
+	s.mu.Unlock()
+
+	// Stop the chat room (this will now complete quickly since clients are disconnected)
+	if s.chatRoom != nil {
+		if err := s.chatRoom.Stop(); err != nil {
+			log.Printf("Error stopping chat room: %v", err)
+		}
+	}
+
 	// Close the tsnet server if in Tailscale mode
 	if s.config.EnableTailscale && s.tsServer != nil {
 		if err := s.tsServer.Close(); err != nil {
 			log.Printf("Error closing Tailscale node: %v", err)
 		}
 	}
-	
-	// Wait for all goroutines to finish
-	s.wg.Wait()
-	
-	log.Print("Chat server stopped")
+
+	// Wait for all goroutines to finish with a timeout
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Print("Chat server stopped")
+	case <-time.After(5 * time.Second):
+		log.Print("Chat server stopped (timeout waiting for goroutines)")
+	}
+
 	return nil
 }
