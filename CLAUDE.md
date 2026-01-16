@@ -46,3 +46,11 @@ This is a terminal-based chat server written in Go that supports both regular TC
 ### Chat Commands
 
 `/who`, `/me <action>`, `/help`, `/quit` - implemented in `client.go:handleCommand`
+
+## Recent Updates
+
+**2026-01-16**: Updated Tailscale to v1.92.5
+- Updated `tailscale.com` dependency from v1.82.5 to v1.92.5 in go.mod
+- Updated Go toolchain to 1.25.5 (auto-updated by go mod tidy)
+- Updated Dockerfile base image to `golang:1.25.6-alpine`
+- Docker image published to `ghcr.io/dkp-810/chat-tails:v1.92.5`
