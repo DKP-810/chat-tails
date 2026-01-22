@@ -1,4 +1,6 @@
 # Chat Tails
+## This Fork:
+### Updated to run Tailscale v 1.92.5
 
 A terminal-based chat application built in Go. Share a chat room with friends over your Tailscale network - they connect via netcat or telnet, no client installation needed.
 
