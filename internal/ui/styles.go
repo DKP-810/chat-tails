@@ -5,13 +5,14 @@ import (
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func init() {
 	// Force color output for network connections
 	// By default, lipgloss detects TTY and disables colors for non-TTY
 	// We want colors even when outputting to TCP sockets
-	lipgloss.SetColorProfile(lipgloss.TrueColor)
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	os.Setenv("COLORTERM", "truecolor")
 }
 
