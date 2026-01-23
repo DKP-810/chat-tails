@@ -178,11 +178,11 @@ func (c *Client) sendWelcomeMessage() error {
 `
 	coloredBanner := ui.SystemStyle.Render(banner)
 	welcomeMsg := ui.FormatWelcomeMessage(c.room.Name, c.Nickname)
-	
+
 	if err := c.write(coloredBanner + "\r\n"); err != nil {
 		return fmt.Errorf("failed to write banner: %w", err)
 	}
-	
+
 	if err := c.write(welcomeMsg + "\r\n\r\n"); err != nil {
 		return fmt.Errorf("failed to write welcome message: %w", err)
 	}

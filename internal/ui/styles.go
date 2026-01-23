@@ -2,9 +2,18 @@ package ui
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+func init() {
+	// Force color output for network connections
+	// By default, lipgloss detects TTY and disables colors for non-TTY
+	// We want colors even when outputting to TCP sockets
+	lipgloss.SetColorProfile(lipgloss.TrueColor)
+	os.Setenv("COLORTERM", "truecolor")
+}
 
 // Color definitions
 var (
