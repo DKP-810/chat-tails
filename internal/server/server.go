@@ -49,8 +49,11 @@ func (s *Server) Start() error {
 	
 	if s.config.EnableTailscale {
 		// Start the tsnet Tailscale server
+		// Set Dir to use hostname-specific state directory for persistence
+		stateDir := fmt.Sprintf("/root/.local/share/tsnet-%s", s.config.HostName)
 		s.tsServer = &tsnet.Server{
 			Hostname: s.config.HostName,
+			Dir:      stateDir,
 			AuthKey:  os.Getenv("TS_AUTHKEY"),
 		}
 
